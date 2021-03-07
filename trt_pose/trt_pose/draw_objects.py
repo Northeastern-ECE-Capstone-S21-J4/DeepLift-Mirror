@@ -6,7 +6,7 @@ class DrawObjects(object):
     def __init__(self, topology):
         self.topology = topology
         
-    def __call__(self, image, object_counts, objects, normalized_peaks):
+    def __call__(self, image, object_counts, objects, normalized_peaks, color=(0, 255, 0)):
         topology = self.topology
         height = image.shape[0]
         width = image.shape[1]
@@ -15,7 +15,6 @@ class DrawObjects(object):
         count = int(object_counts[0])
         K = topology.shape[0]
         for i in range(count):
-            color = (0, 255, 0)
             obj = objects[0][i]
             C = obj.shape[0]
             for j in range(C):
