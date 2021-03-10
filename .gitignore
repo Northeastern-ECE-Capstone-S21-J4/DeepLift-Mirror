@@ -1,4 +1,3 @@
 *.onnx
-*.pth
 *.o
 app/keypoints
