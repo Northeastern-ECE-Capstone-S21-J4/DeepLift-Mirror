@@ -76,6 +76,7 @@ def preprocess(image):
     mean = torch.Tensor([0.485, 0.456, 0.406]).cuda()
     std = torch.Tensor([0.229, 0.224, 0.225]).cuda()
     device = torch.device('cuda')
+    image = cv2.resize(image, (224,224), interpolation=cv2.INTER_AREA)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     image = PIL.Image.fromarray(image)
     image = transforms.functional.to_tensor(image).to(device)
@@ -83,7 +84,7 @@ def preprocess(image):
     return image[None, ...]
 
 
-def depth_test(keypoints, squat_threshhold=.1):
+def depth_test(keypoints, squat_threshhold=.2):
     max_thigh_length = 0
     standing_threshold = 0.2
     result = dict()
@@ -186,8 +187,8 @@ def main():
     print("Loading topology and model")
     load_model()
 
-    WIDTH = 224
-    HEIGHT = 224
+    WIDTH = 224 * 4
+    HEIGHT = 224 * 4
 
     print("Starting camera")
     camera = USBCamera(width=WIDTH, height=HEIGHT, capture_fps=30, capture_device=0)
