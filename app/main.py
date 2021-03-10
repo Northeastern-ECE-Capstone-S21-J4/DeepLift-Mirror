@@ -83,26 +83,32 @@ def preprocess(image):
     image.sub_(mean[:, None, None]).div_(std[:, None, None])
     return image[None, ...]
 
-
-def depth_test(keypoints, squat_threshhold=.2):
-    max_thigh_length = 0
-    standing_threshold = 0.2
+max_thigh_length = 0
+def depth_test(keypoints, squat_threshhold=.1):
+    global max_thigh_length
+    standing_threshold = 0.12
     result = dict()
     result['is_squat'] = False
     result['is_standing'] = False
-    
+    result['max_thigh'] = max_thigh_length
+    result['curr_thigh'] = 0
+
     if float(keypoints['left_hip'][0]) == 0.0 or float(keypoints['left_knee'][0]) == 0.0 or float(keypoints['right_hip'][0]) == 0.0  or float(keypoints['right_knee'][0]) == 0.0:
         return result
-    elif float(keypoints['left_hip'][0]) + squat_threshhold > float(keypoints['left_knee'][0])         and float(keypoints['right_hip'][0]) + squat_threshhold > float(keypoints['right_knee'][0]):
+    elif float(keypoints['left_hip'][0]) + squat_threshhold > float(keypoints['left_knee'][0]) and float(keypoints['right_hip'][0]) + squat_threshhold > float(keypoints['right_knee'][0]):
         result['is_squat'] = True
         
     curr_thigh_length = float(keypoints['left_knee'][0]) - float(keypoints['left_hip'][0])
     if curr_thigh_length > max_thigh_length:
         max_thigh_length = curr_thigh_length
+        if max_thigh_length == 0:
+            import pdb; pdb.set_trace()
         
     if curr_thigh_length > max_thigh_length - standing_threshold:
         result['is_standing'] = True
     
+    result['max_thigh'] = max_thigh_length
+    result['curr_thigh'] = curr_thigh_length
     return result
 
 
@@ -135,12 +141,15 @@ def print_to_file(keypoints, dump=True):
 # parse_objects = ParseObjects(topology)
 # draw_objects = DrawObjects(topology)
 
-
+repcount = 0
+states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
 
 def execute(change):
     global frame_num 
     global topology
     global model_trt
+    global repcount
+    global states
     # global parse_objects
     # global draw_objects
 
@@ -161,20 +170,34 @@ def execute(change):
         
     keypoints = print_to_file(keypoints, dump=False)
     analytics = depth_test(keypoints)
-    print(f"Squat: {analytics['is_squat']} KP: {keypoints['left_hip'][0]},{keypoints['left_knee'][0]},{keypoints['right_hip'][0]},{keypoints['right_knee'][0]}", end='\r')
-    
+
+    #update states
+    # states["prePrevState"] = states["prevState"]
+    states["prevState"] = states["currState"]
+
     if analytics['is_squat']:
+        states["currState"] = "squat"
         color = (0, 255, 0)
     elif analytics['is_standing']:
+        states["currState"] = "standing"
         color = (0, 0, 255)
     else:
         color = (0, 255, 255)
+    
+    if states["prevState"] == "squat" and states["currState"] == "standing":
+        repcount = repcount + 1
+
+    print(f"REPCOUNT: {repcount} Squat: {analytics['is_squat']} Thigh length: {analytics['curr_thigh']} Max thigh: {analytics['max_thigh']} KP: {keypoints['left_hip'][0]},{keypoints['left_knee'][0]},{keypoints['right_hip'][0]},{keypoints['right_knee'][0]}", end='\r')
+    
+    
         
     draw_objects(image, counts, objects, peaks, color)
 #     image = cv2.rotate(image, cv2.cv2.ROTATE_90_COUNTERCLOCKWISE)
-    image_w = bgr8_to_jpeg(image[:, ::-1, :])
-    
-    cv2.imshow('image', image[:, ::-1, :])
+    # image_w = bgr8_to_jpeg(image[:, ::-1, :])
+    resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
+    # cv2.imshow('image', image[:, ::-1, :])
+    cv2.imshow('image', resized)
+
     cv2.waitKey(1)  
 
 
