@@ -17,7 +17,7 @@ import trt_pose.plugins
 
 import datetime as datetime
 import time
-
+import numpy as np
 
 class DrawObjects(object):
     
@@ -83,32 +83,42 @@ def preprocess(image):
     image.sub_(mean[:, None, None]).div_(std[:, None, None])
     return image[None, ...]
 
-max_thigh_length = 0
+# tests if user is standing by getting the angle of the knee joints
+def test_standing(keypoints):
+
+    threshold = 5
+    hip = np.array(keypoints['left_hip']).astype(float)
+    knee = np.array(keypoints['left_knee']).astype(float)
+    ankle = np.array(keypoints['left_ankle']).astype(float)
+
+    thigh = hip - knee
+    calf = ankle - knee
+
+    cosine_angle = np.dot(thigh, calf) / (np.linalg.norm(thigh) * np.linalg.norm(calf))
+    angle = np.arccos(cosine_angle)
+
+    degree =  np.degrees(angle)
+
+
+    print("DEGREE " + str(degree))
+    return degree > 180 - threshold and degree < 180 + threshold
+        
+
 def depth_test(keypoints, squat_threshhold=.1):
     global max_thigh_length
-    standing_threshold = 0.12
+    standing_threshold = 0.1
     result = dict()
     result['is_squat'] = False
     result['is_standing'] = False
-    result['max_thigh'] = max_thigh_length
-    result['curr_thigh'] = 0
 
-    if float(keypoints['left_hip'][0]) == 0.0 or float(keypoints['left_knee'][0]) == 0.0 or float(keypoints['right_hip'][0]) == 0.0  or float(keypoints['right_knee'][0]) == 0.0:
+    if float(keypoints['left_hip'][0]) == 0.0 or float(keypoints['left_knee'][0]) == 0.0 or float(keypoints['right_hip'][0]) == 0.0  or float(keypoints['right_knee'][0]) == 0.0 \
+        or float(keypoints['left_ankle'][0]) == 0.0 or float(keypoints['right_ankle'][0]) == 0.0:
         return result
     elif float(keypoints['left_hip'][0]) + squat_threshhold > float(keypoints['left_knee'][0]) and float(keypoints['right_hip'][0]) + squat_threshhold > float(keypoints['right_knee'][0]):
         result['is_squat'] = True
+    else:
+        result['is_standing'] = test_standing(keypoints)
         
-    curr_thigh_length = float(keypoints['left_knee'][0]) - float(keypoints['left_hip'][0])
-    if curr_thigh_length > max_thigh_length:
-        max_thigh_length = curr_thigh_length
-        if max_thigh_length == 0:
-            import pdb; pdb.set_trace()
-        
-    if curr_thigh_length > max_thigh_length - standing_threshold:
-        result['is_standing'] = True
-    
-    result['max_thigh'] = max_thigh_length
-    result['curr_thigh'] = curr_thigh_length
     return result
 
 
@@ -133,6 +143,16 @@ def print_to_file(keypoints, dump=True):
         json.dump(json_keypts, f, indent = 6)
     return json_keypts
 
+def read_qr_code(image):
+
+    qrDecoder = cv2.QRCodeDetector()
+    
+    # Detect and decode the qrcode
+    data,bbox,rectifiedImage = qrDecoder.detectAndDecode(image)
+   
+    cv2.imshow('image', image)
+    cv2.waitKey(1) 
+    return data
 
 # width = 224
 # height= 224
@@ -143,6 +163,7 @@ def print_to_file(keypoints, dump=True):
 
 repcount = 0
 states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
+session_running = False
 
 def execute(change):
     global frame_num 
@@ -150,63 +171,89 @@ def execute(change):
     global model_trt
     global repcount
     global states
-    # global parse_objects
-    # global draw_objects
+    global session_running
 
-    parse_objects = ParseObjects(topology)
-    draw_objects = DrawObjects(topology)
-
-
-    frame_num = frame_num + 1
     image = change['new']
-    data = preprocess(image)
-    cmap, paf = model_trt(data)
-    cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
-    counts, objects, peaks = parse_objects(cmap, paf)#, cmap_threshold=0.15, link_threshold=0.15)
 
-    keypoints = []
-    for keypoint in peaks[0]:
-        keypoints.append(keypoint[0])
+    if session_running:
+
+        parse_objects = ParseObjects(topology)
+        draw_objects = DrawObjects(topology)
+
+
+        frame_num = frame_num + 1
         
-    keypoints = print_to_file(keypoints, dump=False)
-    analytics = depth_test(keypoints)
+        data = preprocess(image)
+        cmap, paf = model_trt(data)
+        cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
+        counts, objects, peaks = parse_objects(cmap, paf)#, cmap_threshold=0.15, link_threshold=0.15)
 
-    #update states
-    # states["prePrevState"] = states["prevState"]
-    states["prevState"] = states["currState"]
+        keypoints = []
+        for keypoint in peaks[0]:
+            keypoints.append(keypoint[0])
+            
+        keypoints = print_to_file(keypoints, dump=False)
+        analytics = depth_test(keypoints)
 
-    if analytics['is_squat']:
-        states["currState"] = "squat"
-        color = (0, 255, 0)
-    elif analytics['is_standing']:
-        states["currState"] = "standing"
-        color = (0, 0, 255)
+        #update states
+        # states["prePrevState"] = states["prevState"]
+        states["prevState"] = states["currState"]
+
+        if analytics['is_squat']:
+            states["currState"] = "squat"
+            color = (0, 255, 0)
+        elif analytics['is_standing']:
+            states["currState"] = "standing"
+            color = (0, 0, 255)
+        else:
+            color = (0, 255, 255)
+        
+        if states["prevState"] == "squat" and states["currState"] == "standing":
+            repcount = repcount + 1
+
+        print(f"REPCOUNT: {repcount} Squat: {analytics['is_squat']} KP: {keypoints['left_hip'][0]},{keypoints['left_knee'][0]},{keypoints['right_hip'][0]},{keypoints['right_knee'][0]}", end='\r')
+            
+        draw_objects(image, counts, objects, peaks, color)
+    #     image = cv2.rotate(image, cv2.cv2.ROTATE_90_COUNTERCLOCKWISE)
+        # image_w = bgr8_to_jpeg(image[:, ::-1, :])
+        resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
+        # cv2.imshow('image', image[:, ::-1, :])
+        cv2.imshow('image', resized)
+
+        cv2.waitKey(1)  
+
+
+        #write to video file 
+    #     frame = cv2.imread(image[:, ::-1, :])
+        # out.write(image[:, ::-1, :])
+
     else:
-        color = (0, 255, 255)
-    
-    if states["prevState"] == "squat" and states["currState"] == "standing":
-        repcount = repcount + 1
 
-    print(f"REPCOUNT: {repcount} Squat: {analytics['is_squat']} Thigh length: {analytics['curr_thigh']} Max thigh: {analytics['max_thigh']} KP: {keypoints['left_hip'][0]},{keypoints['left_knee'][0]},{keypoints['right_hip'][0]},{keypoints['right_knee'][0]}", end='\r')
-    
-    
+        data = read_qr_code(image)
+        if len(data) > 0:
+            session_running = True
+
+            # do something with data here
+
+
         
-    draw_objects(image, counts, objects, peaks, color)
-#     image = cv2.rotate(image, cv2.cv2.ROTATE_90_COUNTERCLOCKWISE)
-    # image_w = bgr8_to_jpeg(image[:, ::-1, :])
-    resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
-    # cv2.imshow('image', image[:, ::-1, :])
-    cv2.imshow('image', resized)
-
-    cv2.waitKey(1)  
 
 
-    #write to video file 
-#     frame = cv2.imread(image[:, ::-1, :])
-    # out.write(image[:, ::-1, :])
+# Display barcode and QR code location
+def display(im, bbox):
+    n = len(bbox)
+    for j in range(n):
+        cv2.line(im, tuple(bbox[j][0].astype(int)), tuple(bbox[ (j+1) % n][0].astype(int)), (255,0,0), 3)
+
+    # Display results
+    resized = cv2.resize(im, (1920, 1080), interpolation = cv2.INTER_AREA)
+    cv2.imshow("Results", resized)
+    cv2.waitKey(1) 
+    
 
 
 def main():
+
     print("Loading topology and model")
     load_model()
 
@@ -218,7 +265,12 @@ def main():
 
     camera.running = True
 
-    print("Running camera")
+    # get qr code
+    # camera.observe(read_qr_code, names='value')
+
+    # camera.unobserve_all()
+
+    # print("Running camera")
     camera.observe(execute, names='value')
 
 
