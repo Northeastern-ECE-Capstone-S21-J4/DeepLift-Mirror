@@ -86,7 +86,9 @@ def preprocess(image):
 # tests if user is standing by getting the angle of the knee joints
 def test_standing(keypoints):
 
-    threshold = 5
+    threshold = 10
+
+    # left
     hip = np.array(keypoints['left_hip']).astype(float)
     knee = np.array(keypoints['left_knee']).astype(float)
     ankle = np.array(keypoints['left_ankle']).astype(float)
@@ -97,11 +99,24 @@ def test_standing(keypoints):
     cosine_angle = np.dot(thigh, calf) / (np.linalg.norm(thigh) * np.linalg.norm(calf))
     angle = np.arccos(cosine_angle)
 
-    degree =  np.degrees(angle)
+    left_degree =  np.degrees(angle)
+    
+    # right 
+    hip = np.array(keypoints['right_hip']).astype(float)
+    knee = np.array(keypoints['right_knee']).astype(float)
+    ankle = np.array(keypoints['right_ankle']).astype(float)
 
+    thigh = hip - knee
+    calf = ankle - knee
 
-    print("DEGREE " + str(degree))
-    return degree > 180 - threshold and degree < 180 + threshold
+    cosine_angle = np.dot(thigh, calf) / (np.linalg.norm(thigh) * np.linalg.norm(calf))
+    angle = np.arccos(cosine_angle)
+    right_degree = np.degrees(angle)
+
+    
+    # print("DEGREE " + str(degree))
+
+    return left_degree > 180 - threshold and left_degree < 180 + threshold and right_degree > 180 - threshold and right_degree < 180 + threshold
         
 
 def depth_test(keypoints, squat_threshhold=.1):
@@ -150,16 +165,14 @@ def read_qr_code(image):
     # Detect and decode the qrcode
     data,bbox,rectifiedImage = qrDecoder.detectAndDecode(image)
    
-    cv2.imshow('image', image)
+    cv2.imshow('image', image[:, ::-1, :])
     cv2.waitKey(1) 
     return data
 
-# width = 224
-# height= 224
-# fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-# out = cv2.VideoWriter("./output.avi", fourcc, 30, (width, height))
-# parse_objects = ParseObjects(topology)
-# draw_objects = DrawObjects(topology)
+width = 224
+height= 224
+fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+out = cv2.VideoWriter("./output.avi", fourcc, 30, (width, height))
 
 repcount = 0
 states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
@@ -194,6 +207,10 @@ def execute(change):
             
         keypoints = print_to_file(keypoints, dump=False)
         analytics = depth_test(keypoints)
+        
+        # check to see if user has left the frame 
+        if len(keypoints) == 0:
+            end_session = True
 
         #update states
         # states["prePrevState"] = states["prevState"]
@@ -218,19 +235,20 @@ def execute(change):
         # image_w = bgr8_to_jpeg(image[:, ::-1, :])
         resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
         # cv2.imshow('image', image[:, ::-1, :])
-        cv2.imshow('image', resized)
+        overlay = cv2.putText(resized, f"REPCOUNT: {repcount}", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
+        cv2.imshow('image', overlay)
 
         cv2.waitKey(1)  
 
 
         #write to video file 
-    #     frame = cv2.imread(image[:, ::-1, :])
-        # out.write(image[:, ::-1, :])
+        out.write(image[:, ::-1, :])
 
     else:
 
         data = read_qr_code(image)
         if len(data) > 0:
+            print(data)
             session_running = True
 
             # do something with data here
@@ -253,7 +271,6 @@ def display(im, bbox):
 
 
 def main():
-
     print("Loading topology and model")
     load_model()
 
@@ -270,8 +287,11 @@ def main():
 
     # camera.unobserve_all()
 
-    # print("Running camera")
+    # print("Running camera")'
+
+    # spawns a thread
     camera.observe(execute, names='value')
+
 
 
 
