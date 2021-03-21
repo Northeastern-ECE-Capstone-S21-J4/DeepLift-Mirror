@@ -18,6 +18,7 @@ import trt_pose.plugins
 import datetime as datetime
 import time
 import numpy as np
+import json
 
 class DrawObjects(object):
     
@@ -164,8 +165,9 @@ def read_qr_code(image):
     
     # Detect and decode the qrcode
     data,bbox,rectifiedImage = qrDecoder.detectAndDecode(image)
-   
-    cv2.imshow('image', image[:, ::-1, :])
+    resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
+    overlay = cv2.putText(resized, f"Please display DeepLift QR Code", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
+    cv2.imshow('image', overlay)
     cv2.waitKey(1) 
     return data
 
@@ -200,17 +202,13 @@ def execute(change):
         cmap, paf = model_trt(data)
         cmap, paf = cmap.detach().cpu(), paf.detach().cpu()
         counts, objects, peaks = parse_objects(cmap, paf)#, cmap_threshold=0.15, link_threshold=0.15)
-
         keypoints = []
         for keypoint in peaks[0]:
             keypoints.append(keypoint[0])
             
         keypoints = print_to_file(keypoints, dump=False)
         analytics = depth_test(keypoints)
-        
-        # check to see if user has left the frame 
-        if len(keypoints) == 0:
-            end_session = True
+
 
         #update states
         # states["prePrevState"] = states["prevState"]
@@ -250,8 +248,9 @@ def execute(change):
         if len(data) > 0:
             print(data)
             session_running = True
-
+            json_data = json.load(data)
             # do something with data here
+
 
 
         
@@ -292,7 +291,9 @@ def main():
     # spawns a thread
     camera.observe(execute, names='value')
 
-
+    # time.sleep(15)
+    # camera.unobserve_all()
+    # out.release()
 
 
 
