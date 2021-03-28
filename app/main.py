@@ -24,6 +24,12 @@ import boto3
 import os
 import sys
 
+from urllib3.exceptions import InsecureRequestWarning
+
+# Suppress only the single warning from urllib3 needed.
+requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
+
+
 
 api_url = 'https://api.deepliftcapstone.xyz'
 
@@ -169,10 +175,7 @@ def print_to_file(keypoints, dump=True):
         json.dump(json_keypts, f, indent = 6)
     return json_keypts
 
-def read_qr_code(image):
-
-    qrDecoder = cv2.QRCodeDetector()
-    
+def read_qr_code(image, qrDecoder):
     # Detect and decode the qrcode
     data,bbox,rectifiedImage = qrDecoder.detectAndDecode(image)
     resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
@@ -185,15 +188,18 @@ def read_qr_code(image):
 
 width = 224*4
 height= 224*4
-fourcc = cv2.VideoWriter_fourcc(*'MJPG')
-out = cv2.VideoWriter("./output.avi", fourcc, 30, (width, height))
+fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+out = cv2.VideoWriter("./output.mp4", fourcc, 30, (width, height))
 
 repcount = 0
 states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
 session_running = False
 json_data = {}
-max_delta = 30.0
+max_delta = 3.0
 next_delta = time.time() + max_delta # Time that the next time endWorkout will be checked
+
+qrDecoder = cv2.QRCodeDetector()
+image_list = []
 
 def execute(change):
     global frame_num 
@@ -205,6 +211,9 @@ def execute(change):
     global json_data
     global max_delta
     global next_delta
+    global qrDecoder
+    global out
+    global image_list
 
     image = change['new']
 
@@ -246,19 +255,19 @@ def execute(change):
         print(f"REPCOUNT: {repcount} Squat: {analytics['is_squat']} KP: {keypoints['left_hip'][0]},{keypoints['left_knee'][0]},{keypoints['right_hip'][0]},{keypoints['right_knee'][0]}", end='\r')
             
         draw_objects(image, counts, objects, peaks, color)
-    #     image = cv2.rotate(image, cv2.cv2.ROTATE_90_COUNTERCLOCKWISE)
-        # image_w = bgr8_to_jpeg(image[:, ::-1, :])
-        resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
+
+
+        overlay = cv2.putText(image, f"REPCOUNT: {repcount}", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
+        next_overlay = cv2.putText(overlay, f"USERNAME: {json_data['username']}, ID: {json_data['exerciseName']}, Weight: {json_data['weight']}", org=(15,800), fontFace=1, fontScale=2, color=(255,255,255),thickness=2)
+        resized = cv2.resize(next_overlay, (1920, 1080), interpolation = cv2.INTER_AREA)
         # cv2.imshow('image', image[:, ::-1, :])
-        overlay = cv2.putText(resized, f"REPCOUNT: {repcount}", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
-        overlay = cv2.putText(resized, f"USERNAME: {json_data['username']}, ID: {json_data['exerciseID']}, Weight: {json_data['weight']}", org=(15,1015), fontFace=1, fontScale=2, color=(255,255,255),thickness=2)
-        cv2.imshow('image', overlay)
+        cv2.imshow('image', resized)
 
         cv2.waitKey(1)  
 
 
         #write to video file 
-        out.write(overlay[:, ::-1, :])
+        out.write(next_overlay)
 
         # #check if we need to close the session and upload video data
         if time.time() > next_delta:
@@ -267,35 +276,38 @@ def execute(change):
             data = json.loads(response.text)
             next_delta = time.time() + max_delta
 
-            # testing
-            out.release()
-            # update json with reps
-            json_data["userName"] = json_data["username"]
-            json_data["reps"] = 4
-            json_data["difficulty"] = data["difficulty"]
-            # create workout
-            url = api_url + '/workouts'
+            if not data['currentlyLifting']:
+                
+                # testing
+                out.release()
 
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": "Bearer " + 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoieWFqaW5nd2FuZzEwMjIiLCJleHBpcmVzIjoxNjE5ODQxNjAwLjB9.BtxFdI0uWoHyakfLSNm82QTQyBLX2wQhriRB6Ywb75k'
-            }
+                # update json with reps
+                json_data["userName"] = json_data["username"]
+                json_data["reps"] = repcount
+                json_data["difficulty"] = data["difficulty"]
+                # create workout
+                url = api_url + '/workouts'
 
-            print(json_data)
-            paths_response = requests.post(url, data=json.dumps(json_data), headers= headers, verify=False) # TODO: Add Bearer token in header to this request
-            print(paths_response)
-            print(paths_response.text)
-            paths_text = json.loads(paths_response.text)
-            # take workout response and upload video to respective s3 bucket
-            s3 = boto3.resource('s3')
-            s3.meta.client.upload_file('output.avi', 'videos-bucket-0001', 'test_video_alt.avi')
-            sys.exit()
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer " + 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoieWFqaW5nd2FuZzEwMjIiLCJleHBpcmVzIjoxNjE5ODQxNjAwLjB9.BtxFdI0uWoHyakfLSNm82QTQyBLX2wQhriRB6Ywb75k'
+
+                }
+
+                paths_response = requests.post(url, data=json.dumps(json_data), headers= headers, verify=False) # TODO: Add Bearer token in header to this request
+                print(paths_response.text)
+                paths_text = json.loads(paths_response.text)
+                # take workout response and upload video to respective s3 bucket
+                s3 = boto3.resource('s3')
+                s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'])
+                sys.exit()
 
     # QR Scanning Mode
     else:
-        data = read_qr_code(image)
+        data = read_qr_code(image, qrDecoder)
         if len(data) > 0:
             try:
+                print("QR Recognized!")
                 json_data = json.loads(data)
                 print(data)
                 session_running = True
