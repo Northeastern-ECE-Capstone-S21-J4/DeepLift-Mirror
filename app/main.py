@@ -19,9 +19,18 @@ import datetime as datetime
 import time
 import numpy as np
 import json
+import requests
+import boto3
+import os
+
+api_url = 'https://api.deepliftcapstone.xyz'
+
 
 class DrawObjects(object):
-    
+    """
+    Draws skeleton on image based on given topology.
+    """   
+
     def __init__(self, topology):
         self.topology = topology
         
@@ -171,6 +180,8 @@ def read_qr_code(image):
     cv2.waitKey(1) 
     return data
 
+# def check_exit():
+
 width = 224
 height= 224
 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
@@ -179,6 +190,7 @@ out = cv2.VideoWriter("./output.avi", fourcc, 30, (width, height))
 repcount = 0
 states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
 session_running = False
+json_data = {}
 
 def execute(change):
     global frame_num 
@@ -187,6 +199,7 @@ def execute(change):
     global repcount
     global states
     global session_running
+    global json_data
 
     image = change['new']
 
@@ -208,7 +221,6 @@ def execute(change):
             
         keypoints = print_to_file(keypoints, dump=False)
         analytics = depth_test(keypoints)
-
 
         #update states
         # states["prePrevState"] = states["prevState"]
@@ -234,6 +246,7 @@ def execute(change):
         resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
         # cv2.imshow('image', image[:, ::-1, :])
         overlay = cv2.putText(resized, f"REPCOUNT: {repcount}", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
+        overlay = cv2.putText(resized, f"USERNAME: {json_data['username']}, ID: {json_data['exerciseID']}, Weight: {json_data['weight']}", org=(15,1015), fontFace=1, fontScale=2, color=(255,255,255),thickness=2)
         cv2.imshow('image', overlay)
 
         cv2.waitKey(1)  
@@ -242,19 +255,36 @@ def execute(change):
         #write to video file 
         out.write(image[:, ::-1, :])
 
-    else:
+        # #check if we need to close the session and upload video data
+        url = os.path.join(api_url,'users', json_data['username'], 'lifting')
+        # print(url)
 
+        # print(request)
+        response = requests.get(url, verify=False)
+        data = json.loads(response.text)
+        
+        print(data)
+        # if not data["currentlyLifting"]:
+        #     out.release()
+        #     # update json with reps
+        #     json_data["reps"] = repcount
+        #     json_data["difficulty"] = data["difficulty"]
+        #     # create workout
+        #     url = api_url + '/workouts'
+        #     paths = json.loads(request.post(url, data=json_data))
+
+        #     # take workout response and upload video to respective s3 bucket
+        #     s3 = boto3.resource('s3')
+        #     s3.meta.client.upload_file('output.avi', 'videos-bucket-0001', 'test_video_alt.avi')
+        #     sys.exit()
+
+    # QR Scanning Mode
+    else:
         data = read_qr_code(image)
         if len(data) > 0:
             print(data)
             session_running = True
-            json_data = json.load(data)
-            # do something with data here
-
-
-
-        
-
+            json_data = json.loads(data)
 
 # Display barcode and QR code location
 def display(im, bbox):
