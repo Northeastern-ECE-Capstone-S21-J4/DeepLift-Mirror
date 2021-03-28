@@ -22,9 +22,10 @@ import json
 import requests
 import boto3
 import os
+import sys
+
 
 api_url = 'https://api.deepliftcapstone.xyz'
-
 
 class DrawObjects(object):
     """
@@ -182,8 +183,8 @@ def read_qr_code(image):
 
 # def check_exit():
 
-width = 224
-height= 224
+width = 224*4
+height= 224*4
 fourcc = cv2.VideoWriter_fourcc(*'MJPG')
 out = cv2.VideoWriter("./output.avi", fourcc, 30, (width, height))
 
@@ -191,6 +192,8 @@ repcount = 0
 states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
 session_running = False
 json_data = {}
+max_delta = 30.0
+next_delta = time.time() + max_delta # Time that the next time endWorkout will be checked
 
 def execute(change):
     global frame_num 
@@ -200,6 +203,8 @@ def execute(change):
     global states
     global session_running
     global json_data
+    global max_delta
+    global next_delta
 
     image = change['new']
 
@@ -253,30 +258,38 @@ def execute(change):
 
 
         #write to video file 
-        out.write(image[:, ::-1, :])
+        out.write(overlay[:, ::-1, :])
 
         # #check if we need to close the session and upload video data
-        url = os.path.join(api_url,'users', json_data['username'], 'lifting')
-        # print(url)
+        if time.time() > next_delta:
+            url = os.path.join(api_url,'users', json_data['username'], 'lifting')
+            response = requests.get(url, verify=False)
+            data = json.loads(response.text)
+            next_delta = time.time() + max_delta
 
-        # print(request)
-        response = requests.get(url, verify=False)
-        data = json.loads(response.text)
-        
-        print(data)
-        # if not data["currentlyLifting"]:
-        #     out.release()
-        #     # update json with reps
-        #     json_data["reps"] = repcount
-        #     json_data["difficulty"] = data["difficulty"]
-        #     # create workout
-        #     url = api_url + '/workouts'
-        #     paths = json.loads(request.post(url, data=json_data))
+            # testing
+            out.release()
+            # update json with reps
+            json_data["userName"] = json_data["username"]
+            json_data["reps"] = 4
+            json_data["difficulty"] = data["difficulty"]
+            # create workout
+            url = api_url + '/workouts'
 
-        #     # take workout response and upload video to respective s3 bucket
-        #     s3 = boto3.resource('s3')
-        #     s3.meta.client.upload_file('output.avi', 'videos-bucket-0001', 'test_video_alt.avi')
-        #     sys.exit()
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": "Bearer " + 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoieWFqaW5nd2FuZzEwMjIiLCJleHBpcmVzIjoxNjE5ODQxNjAwLjB9.BtxFdI0uWoHyakfLSNm82QTQyBLX2wQhriRB6Ywb75k'
+            }
+
+            print(json_data)
+            paths_response = requests.post(url, data=json.dumps(json_data), headers= headers, verify=False) # TODO: Add Bearer token in header to this request
+            print(paths_response)
+            print(paths_response.text)
+            paths_text = json.loads(paths_response.text)
+            # take workout response and upload video to respective s3 bucket
+            s3 = boto3.resource('s3')
+            s3.meta.client.upload_file('output.avi', 'videos-bucket-0001', 'test_video_alt.avi')
+            sys.exit()
 
     # QR Scanning Mode
     else:
