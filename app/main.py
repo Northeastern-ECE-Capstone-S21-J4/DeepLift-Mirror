@@ -295,9 +295,13 @@ def execute(change):
     else:
         data = read_qr_code(image)
         if len(data) > 0:
-            print(data)
-            session_running = True
-            json_data = json.loads(data)
+            try:
+                json_data = json.loads(data)
+                print(data)
+                session_running = True
+            except:
+                print("INVALID QR: Retry with QR code generated from app")
+                pass
 
 # Display barcode and QR code location
 def display(im, bbox):
