@@ -23,6 +23,7 @@ import requests
 import boto3
 import os
 import sys
+import copy 
 
 from urllib3.exceptions import InsecureRequestWarning
 
@@ -190,7 +191,7 @@ width = 224*4
 height= 224*4
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter("./output.mp4", fourcc, 30, (width, height))
-
+out_nopts = cv2.VideoWriter("./output_no_pts.mp4", fourcc, 30, (width, height))
 repcount = 0
 states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
 session_running = False
@@ -254,11 +255,12 @@ def execute(change):
 
         print(f"REPCOUNT: {repcount} Squat: {analytics['is_squat']} KP: {keypoints['left_hip'][0]},{keypoints['left_knee'][0]},{keypoints['right_hip'][0]},{keypoints['right_knee'][0]}", end='\r')
             
+        blank_image = copy.deepcopy(image)
         draw_objects(image, counts, objects, peaks, color)
 
 
         overlay = cv2.putText(image, f"REPCOUNT: {repcount}", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
-        next_overlay = cv2.putText(overlay, f"USERNAME: {json_data['username']}, ID: {json_data['exerciseName']}, Weight: {json_data['weight']}", org=(15,800), fontFace=1, fontScale=2, color=(255,255,255),thickness=2)
+        next_overlay = cv2.putText(overlay, f"USERNAME: {json_data['username']}, Exercise : {json_data['exerciseName']}, Weight: {json_data['weight']}", org=(15,800), fontFace=1, fontScale=1, color=(255,255,255),thickness=2)
         resized = cv2.resize(next_overlay, (1920, 1080), interpolation = cv2.INTER_AREA)
         # cv2.imshow('image', image[:, ::-1, :])
         cv2.imshow('image', resized)
@@ -268,6 +270,7 @@ def execute(change):
 
         #write to video file 
         out.write(next_overlay)
+        out_nopts.write(blank_image)
 
         # #check if we need to close the session and upload video data
         if time.time() > next_delta:
@@ -280,6 +283,7 @@ def execute(change):
                 
                 # testing
                 out.release()
+                out_nopts.release()
 
                 # update json with reps
                 json_data["userName"] = json_data["username"]
@@ -299,7 +303,8 @@ def execute(change):
                 paths_text = json.loads(paths_response.text)
                 # take workout response and upload video to respective s3 bucket
                 s3 = boto3.resource('s3')
-                s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'])
+                s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
+                s3.meta.client.upload_file('output_no_pts.mp4', 'videos-bucket-0001', paths_text['video_without_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
                 sys.exit()
 
     # QR Scanning Mode
