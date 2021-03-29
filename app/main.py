@@ -33,6 +33,7 @@ requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 
 api_url = 'https://api.deepliftcapstone.xyz'
+bearer_token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoieWFqaW5nd2FuZzEwMjIiLCJleHBpcmVzIjoxNjE5ODQxNjAwLjB9.BtxFdI0uWoHyakfLSNm82QTQyBLX2wQhriRB6Ywb75k'
 
 class DrawObjects(object):
     """
@@ -176,10 +177,12 @@ def print_to_file(keypoints, dump=True):
         json.dump(json_keypts, f, indent = 6)
     return json_keypts
 
-def read_qr_code(image, qrDecoder):
+def read_qr_code(image):
+
+    qrDecoder = cv2.QRCodeDetector()
     # Detect and decode the qrcode
     data,bbox,rectifiedImage = qrDecoder.detectAndDecode(image)
-    resized = cv2.resize(image[:,::-1,:], (1920, 1080), interpolation = cv2.INTER_AREA)
+    resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
     overlay = cv2.putText(resized, f"Please display DeepLift QR Code", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
     cv2.imshow('image', overlay)
     cv2.waitKey(1) 
@@ -189,9 +192,10 @@ def read_qr_code(image, qrDecoder):
 
 width = 224*4
 height= 224*4
+fps = 10
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-out = cv2.VideoWriter("./output.mp4", fourcc, 30, (width, height))
-out_nopts = cv2.VideoWriter("./output_no_pts.mp4", fourcc, 30, (width, height))
+out = cv2.VideoWriter("./output.mp4", fourcc, fps, (width, height))
+out_nopts = cv2.VideoWriter("./output_no_pts.mp4", fourcc, fps, (width, height))
 repcount = 0
 states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
 session_running = False
@@ -199,7 +203,7 @@ json_data = {}
 max_delta = 3.0
 next_delta = time.time() + max_delta # Time that the next time endWorkout will be checked
 
-qrDecoder = cv2.QRCodeDetector()
+
 image_list = []
 
 def execute(change):
@@ -212,7 +216,6 @@ def execute(change):
     global json_data
     global max_delta
     global next_delta
-    global qrDecoder
     global out
     global image_list
 
@@ -294,28 +297,43 @@ def execute(change):
 
                 headers = {
                     "Content-Type": "application/json",
-                    "Authorization": "Bearer " + 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoieWFqaW5nd2FuZzEwMjIiLCJleHBpcmVzIjoxNjE5ODQxNjAwLjB9.BtxFdI0uWoHyakfLSNm82QTQyBLX2wQhriRB6Ywb75k'
+                    "Authorization": "Bearer " + bearer_token
 
                 }
 
-                paths_response = requests.post(url, data=json.dumps(json_data), headers= headers, verify=False) # TODO: Add Bearer token in header to this request
-                print(paths_response.text)
-                paths_text = json.loads(paths_response.text)
-                # take workout response and upload video to respective s3 bucket
-                s3 = boto3.resource('s3')
-                s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
-                s3.meta.client.upload_file('output_no_pts.mp4', 'videos-bucket-0001', paths_text['video_without_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
+                # paths_response = requests.post(url, data=json.dumps(json_data), headers= headers, verify=False) # TODO: Add Bearer token in header to this request
+                # print(paths_response.text)
+                # paths_text = json.loads(paths_response.text)
+                # # take workout response and upload video to respective s3 bucket
+                # s3 = boto3.resource('s3')
+                # s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
+                # s3.meta.client.upload_file('output_no_pts.mp4', 'videos-bucket-0001', paths_text['video_without_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
                 sys.exit()
 
     # QR Scanning Mode
     else:
-        data = read_qr_code(image, qrDecoder)
+        data = read_qr_code(image)
         if len(data) > 0:
             try:
                 print("QR Recognized!")
                 json_data = json.loads(data)
                 print(data)
                 session_running = True
+
+                # front end does this part
+               # # start workout
+                # url = api_url + '/workouts/user/' + json_data['username'] + '/start'
+
+                # headers = {
+                #     "Content-Type": "application/json",
+                #     "Authorization": "Bearer " + bearer_token
+                # }
+
+                # start_response = requests.put(url, headers= headers, verify=False)
+                # print("Printing start response")
+                # print(start_response)
+                # print(start_response.text)
+
             except:
                 print("INVALID QR: Retry with QR code generated from app")
                 pass
