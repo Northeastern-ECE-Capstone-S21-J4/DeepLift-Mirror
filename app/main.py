@@ -192,7 +192,7 @@ def read_qr_code(image):
 
 width = 224*4
 height= 224*4
-fps = 10
+fps = 8
 fourcc = cv2.VideoWriter_fourcc(*'mp4v')
 out = cv2.VideoWriter("./output.mp4", fourcc, fps, (width, height))
 out_nopts = cv2.VideoWriter("./output_no_pts.mp4", fourcc, fps, (width, height))
@@ -201,10 +201,16 @@ states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
 session_running = False
 json_data = {}
 max_delta = 3.0
-next_delta = time.time() + max_delta # Time that the next time endWorkout will be checked
+next_delta = time.time() # Time that the next time endWorkout will be checked
 
 
 image_list = []
+image_nopts_list = []
+
+
+# variable to tell if we are in countdown state
+countdown = False
+count_seconds = 11
 
 def execute(change):
     global frame_num 
@@ -214,14 +220,40 @@ def execute(change):
     global states
     global session_running
     global json_data
-    global max_delta
     global next_delta
-    global out
     global image_list
+    global image_nopts_list
+    global countdown
+    global count_seconds
 
     image = change['new']
 
-    if session_running:
+    
+    # countdown in between getting qr code and starting workout
+    if countdown:
+
+        resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
+        if time.time() > next_delta:
+
+            next_delta = time.time() + 1.0
+            count_seconds = count_seconds - 1
+            if count_seconds == -1:
+                countdown = False
+
+        if count_seconds == 0:
+            overlay = cv2.putText(resized, 'Start Workout!', org=(800,540), fontFace=1, fontScale=5, color=(255,255,255),thickness=5)
+            next_overlay = cv2.putText(overlay, f"{json_data['username']}, get in position!", org=(7,800), fontFace=2, fontScale=2, color=(255,255,255),thickness=2)
+
+        else:
+            overlay = cv2.putText(resized, str(count_seconds), org=(940,540), fontFace=1, fontScale=8, color=(255,255,255),thickness=5)
+            next_overlay = cv2.putText(overlay, f"{json_data['username']}, get in position!", org=(7,800), fontFace=2, fontScale=2, color=(255,255,255),thickness=2)
+
+        cv2.imshow('image', next_overlay)
+        
+        cv2.waitKey(1) 
+
+
+    elif session_running:
 
         parse_objects = ParseObjects(topology)
         draw_objects = DrawObjects(topology)
@@ -263,17 +295,16 @@ def execute(change):
 
 
         overlay = cv2.putText(image, f"REPCOUNT: {repcount}", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
-        next_overlay = cv2.putText(overlay, f"USERNAME: {json_data['username']}, Exercise : {json_data['exerciseName']}, Weight: {json_data['weight']}", org=(15,800), fontFace=1, fontScale=1, color=(255,255,255),thickness=2)
+        next_overlay = cv2.putText(overlay, f"Exercise: {json_data['exerciseName']}, Weight: {json_data['weight']}", org=(7,800), fontFace=1, fontScale=2, color=(255,255,255),thickness=2)
         resized = cv2.resize(next_overlay, (1920, 1080), interpolation = cv2.INTER_AREA)
         # cv2.imshow('image', image[:, ::-1, :])
         cv2.imshow('image', resized)
 
         cv2.waitKey(1)  
 
-
-        #write to video file 
-        out.write(next_overlay)
-        out_nopts.write(blank_image)
+        image_list.append(next_overlay)
+        image_nopts_list.append(blank_image)
+      
 
         # #check if we need to close the session and upload video data
         if time.time() > next_delta:
@@ -284,7 +315,15 @@ def execute(change):
 
             if not data['currentlyLifting']:
                 
-                # testing
+                # close all windows
+                cv2.destroyAllWindows()
+
+                #write to video files
+                for i in range(0, len(image_list)):
+                    #write to video file 
+                    out.write(image_list[i])
+                    out_nopts.write(image_nopts_list[i])
+
                 out.release()
                 out_nopts.release()
 
@@ -301,13 +340,15 @@ def execute(change):
 
                 }
 
-                # paths_response = requests.post(url, data=json.dumps(json_data), headers= headers, verify=False) # TODO: Add Bearer token in header to this request
-                # print(paths_response.text)
-                # paths_text = json.loads(paths_response.text)
-                # # take workout response and upload video to respective s3 bucket
-                # s3 = boto3.resource('s3')
-                # s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
-                # s3.meta.client.upload_file('output_no_pts.mp4', 'videos-bucket-0001', paths_text['video_without_path'], ExtraArgs={'Metadata': {'ContentType': 'octet-stream'}})
+                paths_response = requests.post(url, data=json.dumps(json_data), headers= headers, verify=False) # TODO: Add Bearer token in header to this request
+                print(paths_response.text)
+                paths_text = json.loads(paths_response.text)
+
+                # take workout response and upload video to respective s3 bucket
+                s3 = boto3.resource('s3')
+
+                s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'], ExtraArgs={'ContentType': 'octet-stream', 'ACL': 'public-read'})
+                s3.meta.client.upload_file('output_no_pts.mp4', 'videos-bucket-0001', paths_text['video_without_path'], ExtraArgs={'ContentType': 'octet-stream', 'ACL': 'public-read'})
                 sys.exit()
 
     # QR Scanning Mode
@@ -319,6 +360,19 @@ def execute(change):
                 json_data = json.loads(data)
                 print(data)
                 session_running = True
+                countdown = True
+                # # import pdb; pdb.set_trace()
+                # for i in reversed(range(0,5)):
+                #     # run simple countdown!
+
+                #     print("getsHere")
+                #     resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
+                #     overlay = cv2.putText(resized, str(i), org=(960,540), fontFace=1, fontScale=5, color=(255,255,255),thickness=5)
+                #     cv2.imshow('image', overlay)
+                    
+                #     cv2.waitKey(1)  
+
+
 
                 # front end does this part
                # # start workout
