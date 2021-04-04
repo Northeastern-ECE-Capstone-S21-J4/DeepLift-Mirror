@@ -161,20 +161,16 @@ human_pose, topology = load_topology()
 
 def print_to_file(keypoints, dump=True):
     global human_pose
-    now = time.time()
-    file_str = "./keypoints/" + str(now) + "_" + str(frame_num) + ".json"
-    
-    with open(file_str, "w") as f:
-        json_keypts = {}
-        for i, point in enumerate(keypoints):
 
-            #convert to numpy to access points
-            point = point.numpy()
-            body_part = human_pose["keypoints"][i]
-            json_keypts[body_part] = [str(point[0]), str(point[1])]
+  
+    json_keypts = {}
+    for i, point in enumerate(keypoints):
 
-    if dump:
-        json.dump(json_keypts, f, indent = 6)
+        #convert to numpy to access points
+        point = point.numpy()
+        body_part = human_pose["keypoints"][i]
+        json_keypts[body_part] = [str(point[0]), str(point[1])]
+
     return json_keypts
 
 def read_qr_code(image):
@@ -182,10 +178,6 @@ def read_qr_code(image):
     qrDecoder = cv2.QRCodeDetector()
     # Detect and decode the qrcode
     data,bbox,rectifiedImage = qrDecoder.detectAndDecode(image)
-    resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
-    overlay = cv2.putText(resized, f"Please display DeepLift QR Code", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
-    cv2.imshow('image', overlay)
-    cv2.waitKey(1) 
     return data
 
 # def check_exit():
@@ -211,6 +203,7 @@ image_nopts_list = []
 # variable to tell if we are in countdown state
 countdown = False
 count_seconds = 11
+uploading = False
 
 def execute(change):
     global frame_num 
@@ -228,7 +221,9 @@ def execute(change):
 
     image = change['new']
 
-    
+
+
+
     # countdown in between getting qr code and starting workout
     if countdown:
 
@@ -248,11 +243,11 @@ def execute(change):
             overlay = cv2.putText(resized, str(count_seconds), org=(940,540), fontFace=1, fontScale=8, color=(255,255,255),thickness=5)
             next_overlay = cv2.putText(overlay, f"{json_data['username']}, get in position!", org=(7,800), fontFace=2, fontScale=2, color=(255,255,255),thickness=2)
 
-        cv2.imshow('image', next_overlay)
+        cv2.imshow('deeplift', next_overlay)
         
         cv2.waitKey(1) 
 
-
+    
     elif session_running:
 
         parse_objects = ParseObjects(topology)
@@ -298,7 +293,7 @@ def execute(change):
         next_overlay = cv2.putText(overlay, f"Exercise: {json_data['exerciseName']}, Weight: {json_data['weight']}", org=(7,800), fontFace=1, fontScale=2, color=(255,255,255),thickness=2)
         resized = cv2.resize(next_overlay, (1920, 1080), interpolation = cv2.INTER_AREA)
         # cv2.imshow('image', image[:, ::-1, :])
-        cv2.imshow('image', resized)
+        cv2.imshow('deeplift', resized)
 
         cv2.waitKey(1)  
 
@@ -315,8 +310,15 @@ def execute(change):
 
             if not data['currentlyLifting']:
                 
-                # close all windows
-                cv2.destroyAllWindows()
+                # # close all windows
+                uploading = True
+                resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
+                next_overlay = cv2.putText(resized, "Uploading ...", org=(400,50), fontFace=1, fontScale=3, color=(255,255,255),thickness=3)
+                cv2.imshow('deeplift', next_overlay)
+                cv2.waitKey(1)  
+                # write uploading ...
+                
+                
 
                 #write to video files
                 for i in range(0, len(image_list)):
@@ -349,22 +351,45 @@ def execute(change):
 
                 s3.meta.client.upload_file('output.mp4', 'videos-bucket-0001', paths_text['video_with_path'], ExtraArgs={'ContentType': 'octet-stream', 'ACL': 'public-read'})
                 s3.meta.client.upload_file('output_no_pts.mp4', 'videos-bucket-0001', paths_text['video_without_path'], ExtraArgs={'ContentType': 'octet-stream', 'ACL': 'public-read'})
-                sys.exit()
+                
+                # redo loop, reset variables
+                image_list = []
+                image_nopts_list = []
+
+
+                # variable to tell if we are in countdown state
+
+                countdown = False
+                count_seconds = 11
+                frame_num = 0
+                repcount = 0
+                states = dict({"prevState" : None, "currState" : None, "prePrevState" : None})
+                session_running = False
+                json_data = {}
+
 
     # QR Scanning Mode
     else:
-        data = read_qr_code(image)
-        if len(data) > 0:
-            try:
-                print("QR Recognized!")
-                json_data = json.loads(data)
-                print(data)
-                session_running = True
-                countdown = True
 
-            except:
-                print("INVALID QR: Retry with QR code generated from app")
-                pass
+        resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
+        overlay = cv2.putText(resized, f"Please display DeepLift QR Code", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
+        cv2.imshow('deeplift', overlay)
+        cv2.waitKey(1) 
+        if frame_num % 5 == 0:
+            data = read_qr_code(image)
+            if len(data) > 0:
+                try:
+                    print("QR Recognized!")
+                    json_data = json.loads(data)
+                    print(data)
+                    session_running = True
+                    countdown = True
+                    frame_num = 0
+                except:
+                    print("INVALID QR: Retry with QR code generated from app")
+                    pass
+
+        frame_num = frame_num + 1
 
 # Display barcode and QR code location
 def display(im, bbox):
@@ -374,7 +399,7 @@ def display(im, bbox):
 
     # Display results
     resized = cv2.resize(im, (1920, 1080), interpolation = cv2.INTER_AREA)
-    cv2.imshow("Results", resized)
+    cv2.imshow("deeplift", resized)
     cv2.waitKey(1) 
     
 
@@ -390,7 +415,9 @@ def main():
     camera = USBCamera(width=WIDTH, height=HEIGHT, capture_fps=30, capture_device=0)
 
     camera.running = True
-
+    cv2.namedWindow("deeplift", cv2.WND_PROP_FULLSCREEN)
+    cv2.setWindowProperty("deeplift", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+    
     # get qr code
     # camera.observe(read_qr_code, names='value')
 
