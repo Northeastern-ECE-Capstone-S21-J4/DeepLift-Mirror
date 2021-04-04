@@ -171,6 +171,7 @@ def print_to_file(keypoints, dump=True):
         body_part = human_pose["keypoints"][i]
         json_keypts[body_part] = [str(point[0]), str(point[1])]
 
+
     return json_keypts
 
 def read_qr_code(image):
@@ -181,6 +182,7 @@ def read_qr_code(image):
     return data
 
 # def check_exit():
+
 
 width = 224*4
 height= 224*4
@@ -219,15 +221,14 @@ def execute(change):
     global countdown
     global count_seconds
 
-    image = change['new']
-
+    image = cv2.rotate(change['new'], cv2.ROTATE_90_COUNTERCLOCKWISE)
 
 
 
     # countdown in between getting qr code and starting workout
     if countdown:
 
-        resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
+        resized = cv2.resize(image, (1080, 1920), interpolation = cv2.INTER_AREA)
         if time.time() > next_delta:
 
             next_delta = time.time() + 1.0
@@ -291,7 +292,7 @@ def execute(change):
 
         overlay = cv2.putText(image, f"REPCOUNT: {repcount}", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
         next_overlay = cv2.putText(overlay, f"Exercise: {json_data['exerciseName']}, Weight: {json_data['weight']}", org=(7,800), fontFace=1, fontScale=2, color=(255,255,255),thickness=2)
-        resized = cv2.resize(next_overlay, (1920, 1080), interpolation = cv2.INTER_AREA)
+        resized = cv2.resize(next_overlay, (1080, 1920), interpolation = cv2.INTER_AREA)
         # cv2.imshow('image', image[:, ::-1, :])
         cv2.imshow('deeplift', resized)
 
@@ -312,7 +313,7 @@ def execute(change):
                 
                 # # close all windows
                 uploading = True
-                resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
+                resized = cv2.resize(image, (1080, 1920), interpolation = cv2.INTER_AREA)
                 next_overlay = cv2.putText(resized, "Uploading ...", org=(400,50), fontFace=1, fontScale=3, color=(255,255,255),thickness=3)
                 cv2.imshow('deeplift', next_overlay)
                 cv2.waitKey(1)  
@@ -371,7 +372,7 @@ def execute(change):
     # QR Scanning Mode
     else:
 
-        resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
+        resized = cv2.resize(image, (1080, 1920), interpolation = cv2.INTER_AREA)
         overlay = cv2.putText(resized, f"Please display DeepLift QR Code", org=(15,50), fontFace=1, fontScale=4, color=(255,255,255),thickness=4)
         cv2.imshow('deeplift', overlay)
         cv2.waitKey(1) 
@@ -398,7 +399,7 @@ def display(im, bbox):
         cv2.line(im, tuple(bbox[j][0].astype(int)), tuple(bbox[ (j+1) % n][0].astype(int)), (255,0,0), 3)
 
     # Display results
-    resized = cv2.resize(im, (1920, 1080), interpolation = cv2.INTER_AREA)
+    resized = cv2.resize(im, (1080, 1920), interpolation = cv2.INTER_AREA)
     cv2.imshow("deeplift", resized)
     cv2.waitKey(1) 
     
@@ -408,11 +409,11 @@ def main():
     print("Loading topology and model")
     load_model()
 
-    WIDTH = 224 * 4
-    HEIGHT = 224 * 4
+    WIDTH = 224*4
+    HEIGHT = 224*4
 
     print("Starting camera")
-    camera = USBCamera(width=WIDTH, height=HEIGHT, capture_fps=30, capture_device=0)
+    camera = USBCamera(width=720, height=1280, capture_fps=30, capture_device=0)
 
     camera.running = True
     cv2.namedWindow("deeplift", cv2.WND_PROP_FULLSCREEN)
