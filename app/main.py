@@ -361,32 +361,6 @@ def execute(change):
                 print(data)
                 session_running = True
                 countdown = True
-                # # import pdb; pdb.set_trace()
-                # for i in reversed(range(0,5)):
-                #     # run simple countdown!
-
-                #     print("getsHere")
-                #     resized = cv2.resize(image, (1920, 1080), interpolation = cv2.INTER_AREA)
-                #     overlay = cv2.putText(resized, str(i), org=(960,540), fontFace=1, fontScale=5, color=(255,255,255),thickness=5)
-                #     cv2.imshow('image', overlay)
-                    
-                #     cv2.waitKey(1)  
-
-
-
-                # front end does this part
-               # # start workout
-                # url = api_url + '/workouts/user/' + json_data['username'] + '/start'
-
-                # headers = {
-                #     "Content-Type": "application/json",
-                #     "Authorization": "Bearer " + bearer_token
-                # }
-
-                # start_response = requests.put(url, headers= headers, verify=False)
-                # print("Printing start response")
-                # print(start_response)
-                # print(start_response.text)
 
             except:
                 print("INVALID QR: Retry with QR code generated from app")
