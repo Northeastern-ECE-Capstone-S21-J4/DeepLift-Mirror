@@ -33,7 +33,6 @@ requests.packages.urllib3.disable_warnings(category=InsecureRequestWarning)
 
 
 api_url = 'https://api.deepliftcapstone.xyz'
-bearer_token = 'eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ1c2VyX2lkIjoieWFqaW5nd2FuZzEwMjIiLCJleHBpcmVzIjoxNjE5ODQxNjAwLjB9.BtxFdI0uWoHyakfLSNm82QTQyBLX2wQhriRB6Ywb75k'
 
 class DrawObjects(object):
     """
